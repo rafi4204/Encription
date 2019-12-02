@@ -17,6 +17,9 @@ import android.util.Base64
 import android.annotation.TargetApi
 import android.content.Context
 import android.os.Build
+import android.os.Build.VERSION_CODES.JELLY_BEAN_MR2
+import android.os.Build.VERSION_CODES.M
+import android.provider.Settings
 import android.security.KeyPairGeneratorSpec
 import java.math.BigInteger
 import java.security.KeyPair
@@ -36,6 +39,7 @@ class MainActivity : AppCompatActivity() {
         keyStore = createAndroidKeyStore()
 
     }
+
     companion object {
         val MASTER_KEY = "MASTER_KEY"
     }
@@ -44,10 +48,28 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        val input = et.text.toString()
-        tv1.text=encrypt(input,"")
-        tv2.text=decrypt(tv1.text.toString(),"")
 
+        //   tv2.text=decrypt(tv1.text.toString(),"")
+
+
+        button.setOnClickListener {
+            val input = et.text.toString()
+            // Create and Save asymmetric key
+            createAndroidKeyStoreAsymmetricKey("MASTER_KEY")
+
+// Get key from keyStore
+            var masterKey = getAndroidKeyStoreAsymmetricKeyPair("MASTER_KEY")
+
+// Creates Cipher with given transformation and provides encrypt and decrypt functions
+            // var cipherWrapper = CipherWrapper("RSA/ECB/PKCS1Padding")
+
+// Encrypt message with the key, using public key
+            var encryptedData = encrypt(input, masterKey?.public)
+
+            tv1.text = encryptedData
+            var decryptedData = decrypt(encryptedData, masterKey?.private)
+            tv2.text = decryptedData
+        }
 
 
     }
@@ -75,7 +97,6 @@ class MainActivity : AppCompatActivity() {
     }
 
 
-
     fun encrypt(data: String, key: Key?): String {
         cipher.init(Cipher.ENCRYPT_MODE, key)
         val bytes = cipher.doFinal(data.toByteArray())
@@ -88,9 +109,57 @@ class MainActivity : AppCompatActivity() {
         val decodedData = cipher.doFinal(encryptedData)
         return String(decodedData)
     }
+
     private fun createAndroidKeyStore(): KeyStore {
         val keyStore = KeyStore.getInstance("AndroidKeyStore")
         keyStore.load(null)
         return keyStore
     }
+
+
+    fun createAndroidKeyStoreAsymmetricKey(alias: String): KeyPair {
+        val generator = KeyPairGenerator.getInstance("RSA", "AndroidKeyStore")
+
+        if (Build.VERSION.SDK_INT == M) {
+            initGeneratorWithKeyGenParameterSpec(generator, alias)
+        } else {
+            initGeneratorWithKeyPairGeneratorSpec(generator, alias)
+        }
+
+        return generator.generateKeyPair()
+    }
+
+    fun removeAndroidKeyStoreKey(alias: String) = keyStore.deleteEntry(alias)
+
+    private fun initGeneratorWithKeyPairGeneratorSpec(generator: KeyPairGenerator, alias: String) {
+        val startDate = Calendar.getInstance()
+        val endDate = Calendar.getInstance()
+        endDate.add(Calendar.YEAR, 20)
+
+        val builder = if (Build.VERSION.SDK_INT >= JELLY_BEAN_MR2) {
+            KeyPairGeneratorSpec.Builder(applicationContext)
+                .setAlias(alias)
+                .setSerialNumber(BigInteger.ONE)
+                .setSubject(X500Principal("CN=${alias} CA Certificate"))
+                .setStartDate(startDate.time)
+                .setEndDate(endDate.time)
+        } else {
+            TODO("VERSION.SDK_INT < JELLY_BEAN_MR2")
+        }
+
+        generator.initialize(builder.build())
+    }
+
+    @TargetApi(M)
+    private fun initGeneratorWithKeyGenParameterSpec(generator: KeyPairGenerator, alias: String) {
+        val builder = KeyGenParameterSpec.Builder(
+            alias,
+            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+        )
+            .setBlockModes(KeyProperties.BLOCK_MODE_ECB)
+            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_RSA_PKCS1)
+        generator.initialize(builder.build())
+    }
+
+
 }
